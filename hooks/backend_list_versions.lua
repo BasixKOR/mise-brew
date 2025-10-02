@@ -20,11 +20,9 @@ function PLUGIN:BackendListVersions(ctx)
     local resp, err = http.get({
         url = "https://formulae.brew.sh/api/formula/" .. tool .. ".json",
     })
-
     if err then
         error("Failed to fetch versions for " .. tool .. ": " .. err)
     end
-
     if resp.status_code ~= 200 then
         error("API returned status " .. resp.status_code .. " for " .. tool)
     end
