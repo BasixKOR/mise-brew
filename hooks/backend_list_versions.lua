@@ -1,7 +1,10 @@
+local http = require("http")
+local json = require("json")
+local strings = require("strings")
+local utils = require("utils")
 -- hooks/backend_list_versions.lua
 -- Lists available versions for a tool in this backend
 -- Documentation: https://mise.jdx.dev/backend-plugin-development.html#backendlistversions
-
 function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
 
@@ -13,15 +16,9 @@ function PLUGIN:BackendListVersions(ctx)
     -- Example implementations (choose/modify based on your backend):
 
     -- Example 1: API-based version listing (like npm, pip, cargo)
-    local http = require("http")
-    local json = require("json")
-
-    -- Replace with your backend's API endpoint
-    local api_url = "https://api.<BACKEND>.org/packages/" .. tool .. "/versions"
 
     local resp, err = http.get({
-        url = api_url,
-        -- headers = { ["Authorization"] = "Bearer " .. token } -- if needed
+        url = "https://formulae.brew.sh/api/formula/" .. tool .. ".json",
     })
 
     if err then
@@ -32,54 +29,21 @@ function PLUGIN:BackendListVersions(ctx)
         error("API returned status " .. resp.status_code .. " for " .. tool)
     end
 
+    -- Now there's a lot of assumptions:
+    -- * A given formulae won't become non-relocatable (cellar: any to cellar).
+    -- * A build for this environment will be available for all versions. Although it will fail if build isn't there.
+    -- * If a build for current environment doesn't exist, it won't for all versions.
+
     local data = json.decode(resp.body)
-    local versions = {}
+    local os_symbol = utils.get_os_symbol()
 
-    -- Parse versions from API response (adjust based on your API structure)
-    if data.versions then
-        for _, version in ipairs(data.versions) do
-            table.insert(versions, version)
-        end
+    if data.bottle.stable.files[os_symbol] == nil then
+        error("No bottle available for " .. tool .. " on " .. os_symbol)
+    end
+    if not strings.has_prefix(data.bottle.stable.files[os_symbol].cellar, ":any") then
+        -- TODO: Make this configurable
+        error("The bottle available for " .. tool .. " on " .. os_symbol .. "is not relocatable")
     end
 
-    -- Example 2: Command-line based version listing
-    --[[
-    local cmd = require("cmd")
-
-    -- Replace with your backend's command to list versions
-    local command = "<BACKEND> search " .. tool .. " --versions"
-    local result = cmd.exec(command)
-
-    if not result or result:match("error") then
-        error("Failed to fetch versions for " .. tool)
-    end
-
-    local versions = {}
-    -- Parse command output to extract versions
-    for version in result:gmatch("[%d%.]+[%w%-]*") do
-        table.insert(versions, version)
-    end
-    --]]
-
-    -- Example 3: Registry file parsing
-    --[[
-    local file = require("file")
-
-    -- Replace with path to your backend's registry or manifest
-    local registry_path = "/path/to/<BACKEND>/registry/" .. tool .. ".json"
-
-    if not file.exists(registry_path) then
-        error("Tool " .. tool .. " not found in registry")
-    end
-
-    local content = file.read(registry_path)
-    local data = json.decode(content)
-    local versions = data.versions or {}
-    --]]
-
-    if #versions == 0 then
-        error("No versions found for " .. tool)
-    end
-
-    return { versions = versions }
+    return { versions = { data.versions.stable } }
 end
